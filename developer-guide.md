@@ -594,6 +594,8 @@ TGE provides declarative hover/active/focus styles. No manual signal boilerplate
 </box>
 ```
 
+**Border reservation:** `borderWidth` in `focusStyle`/`hoverStyle`/`activeStyle` auto-reserves space with a transparent border when inactive, preventing layout jitter on activation.
+
 ### Interaction Props
 
 | Prop | Type | Description |
@@ -634,6 +636,8 @@ TGE provides declarative hover/active/focus styles. No manual signal boilerplate
 </box>
 ```
 
+**Auto-RECT:** Interactive nodes don't need explicit `backgroundColor` to be clickable. The engine automatically injects a near-transparent placeholder for hit-testing.
+
 ### Scroll Props
 
 | Prop | Type | Default | Description |
@@ -663,6 +667,8 @@ handle.scrollTo(0)       // scroll to top
 handle.scrollBy(100)     // scroll down 100px
 handle.scrollIntoView("item-5")  // scroll element into view
 ```
+
+**Scissor clipping:** All paint primitives (rects, text, blur, shadows, glow) are clipped to the scroll container bounds. Hit-testing also respects scroll viewport — off-screen items don't receive false hover/click events.
 
 ### Floating / Absolute Positioning
 
@@ -1306,6 +1312,84 @@ markDirty() // tell TGE to repaint
 
 ---
 
+### useDrag(options)
+
+Encapsulates drag interactions — pointer capture, `isDragging` flag, and mouse event wiring. Returns `dragProps` to spread on the drag target.
+
+```typescript
+import { useDrag } from "tge"
+
+type DragOptions = {
+  onDragStart?: (event: NodeMouseEvent) => void
+  onDrag?: (event: NodeMouseEvent) => void
+  onDragEnd?: (event: NodeMouseEvent) => void
+  disabled?: () => boolean
+}
+
+type DragState = {
+  dragging: () => boolean    // reactive signal
+  dragProps: DragProps        // spread on target element
+}
+```
+
+```tsx
+function Scrubber(props: { value: number; onChange: (v: number) => void }) {
+  const { dragging, dragProps } = useDrag({
+    onDragStart: (e) => props.onChange(Math.round((e.nodeX / e.width) * 100)),
+    onDrag: (e) => props.onChange(Math.round(Math.max(0, Math.min(1, e.nodeX / e.width)) * 100)),
+  })
+
+  return (
+    <box {...dragProps} width={200} height={12} backgroundColor="#333" cornerRadius={6}>
+      <box width={`${props.value}%`} height={12} backgroundColor={dragging() ? "#66aaff" : "#4488cc"} cornerRadius={6} />
+    </box>
+  )
+}
+```
+
+The Slider component uses `useDrag` internally.
+
+---
+
+### useHover(options)
+
+Encapsulates hover detection with configurable enter/leave delays. Returns `hovered` signal and `hoverProps` to spread on the target.
+
+```typescript
+import { useHover } from "tge"
+
+type HoverOptions = {
+  delay?: number          // ms before onEnter (default: 0)
+  leaveDelay?: number     // ms before onLeave (default: 0)
+  onEnter?: () => void
+  onLeave?: () => void
+}
+
+type HoverState = {
+  hovered: () => boolean    // reactive signal
+  hoverProps: HoverProps    // spread on target element
+}
+```
+
+```tsx
+function HoverCard(props: { children: any }) {
+  const { hovered, hoverProps } = useHover({
+    delay: 300,
+    onEnter: () => console.log("hovered"),
+  })
+
+  return (
+    <box {...hoverProps} backgroundColor={hovered() ? "#333" : "#222"} padding={12} cornerRadius={8}>
+      {props.children}
+    </box>
+  )
+}
+```
+
+The Tooltip component uses `useHover` internally for delayed show/hide.
+
+---
+
 ## Components (`tge/components`)
 
 ### Component Architecture
@@ -1459,6 +1543,7 @@ type ButtonRenderContext = {
   focused: boolean
   pressed: boolean
   disabled: boolean
+  buttonProps: { focusable: true; onPress: (event?: PressEvent) => void }  // spread on root element
 }
 
 type ButtonProps = {
@@ -1624,6 +1709,7 @@ type CheckboxRenderContext = {
   checked: boolean
   focused: boolean
   disabled: boolean
+  toggleProps: { focusable: true; onPress: (event?: PressEvent) => void }  // spread on root element
 }
 
 type CheckboxProps = {
@@ -1667,6 +1753,7 @@ type SwitchRenderContext = {
   checked: boolean
   focused: boolean
   disabled: boolean
+  toggleProps: { focusable: true; onPress: (event?: PressEvent) => void }  // spread on root element
 }
 
 type SwitchProps = {
@@ -1714,6 +1801,7 @@ type RadioOptionContext = {
   focused: boolean
   disabled: boolean
   index: number
+  optionProps: { onPress: (event?: PressEvent) => void }  // spread on each option element
 }
 
 type RadioGroupProps = {
@@ -1961,7 +2049,7 @@ Headless tab switcher. Controlled component.
 import { Tabs } from "tge/components"
 
 type TabItem = { label: string; content: () => JSX.Element }
-type TabRenderContext = { active: boolean; focused: boolean; index: number }
+type TabRenderContext = { active: boolean; focused: boolean; index: number; tabProps: { onPress: (event?: PressEvent) => void } }
 
 type TabsProps = {
   activeTab: number
@@ -2002,7 +2090,7 @@ Headless selectable list with Up/Down navigation.
 ```typescript
 import { List } from "tge/components"
 
-type ListItemContext = { selected: boolean; focused: boolean; index: number }
+type ListItemContext = { selected: boolean; focused: boolean; index: number; itemProps: { onPress: (event?: PressEvent) => void } }
 
 type ListProps = {
   items: string[]
@@ -2042,7 +2130,7 @@ Headless data table with row selection.
 import { Table } from "tge/components"
 
 type TableColumn = { key: string; header: string; width?: number | "grow"; align?: "left" | "center" | "right" }
-type TableCellContext = { selected: boolean; focused: boolean; rowIndex: number }
+type TableCellContext = { selected: boolean; focused: boolean; rowIndex: number; rowProps: { onPress: (event?: PressEvent) => void } }
 
 type TableProps = {
   columns: TableColumn[]
@@ -2411,6 +2499,8 @@ type VirtualListProps<T> = {
 ```
 
 **Keyboard:** `Up`/`Down` to navigate, `Enter` to select.
+
+**Mouse:** Hover highlights items (`ctx.hovered`). Click to select. The container handles mouse events internally — no props to spread.
 
 ---
 
@@ -3272,6 +3362,8 @@ function AnimatedPanel() {
 | `pushFocusScope` | Focus | Create focus trap |
 | `setPointerCapture` | Input | Lock mouse events to a node (for drag) |
 | `releasePointerCapture` | Input | Unlock pointer capture |
+| `useDrag` | Input | Drag interaction hook (pointer capture + isDragging) |
+| `useHover` | Input | Hover detection hook (with delays) |
 | `useKeyboard` | Input | Reactive keyboard signal |
 | `useMouse` | Input | Reactive mouse signal |
 | `useInput` | Input | All input events as signal |
